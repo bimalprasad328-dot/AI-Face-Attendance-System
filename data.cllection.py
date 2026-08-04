@@ -1,3 +1,5 @@
+# Face detection data collection script
+
 import cv2
 import os
 import pandas as pd
