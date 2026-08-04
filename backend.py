@@ -1,3 +1,4 @@
+# AI Face Attendance System Backend Processor
 import os
 import cv2
 import subprocess
