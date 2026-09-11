@@ -14,10 +14,10 @@ An automated attendance tracking system powered by Artificial Intelligence and c
 
 ### File Directory Layout:
 * `backend.py` — Handles API routes and facial recognition data flows.
-* `data.collection.py` — Script to gather and register initial student face images.
+* `data_collection.py` — Script to gather and register initial student face images.
 * `frontend/index.html` — Clean, user-friendly dashboard interface.
-* `students.csv` — Contains database details of registered students.
-* `attendance.csv` — Live log recording dates, times, and present names.
+* `students.csv` — Contains database details of registered students. (generated locally, not tracked in git)
+* `attendance.csv` — Live log recording dates, times, and present names. (generated locally, not tracked in git)
 
 ---
 
@@ -36,7 +36,7 @@ Follow these steps to run the project locally on your machine:
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com
+git clone https://github.com/bimalprasad328-dot/AI-Face-Attendance-System.git
 cd AI-Face-Attendance-System
 ```
 
@@ -51,13 +51,17 @@ python3 -m venv venv
 source venv/bin/activate
 ```
 
-### 3. Register Student Faces
+### 3. Set up environment variables
+Create a `.env` file in the project root with the following:
+You can get a free API key from https://console.groq.com
+```
+### 4. Register Student Faces
 Run the data collection script to snap face samples and update your directory:
 ```bash
-python data.collection.py
+python data_collection.py
 ```
 
-### 4. Start the Application Server
+### 5. Start the Application Server
 Launch the backend processor:
 ```bash
 python backend.py
