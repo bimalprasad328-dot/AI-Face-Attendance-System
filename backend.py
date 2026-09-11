@@ -3,6 +3,7 @@ import os
 import sys
 import cv2
 import subprocess
+import threading
 import numpy as np
 import pandas as pd
 from flask import Flask, request, jsonify
@@ -172,18 +173,28 @@ def recognize_face():
     synchronize_absentees()
     return jsonify({"status": "processed"})
 
+def run_capture_and_reload(name):
+    global known_face_encodings, known_face_names
+    process = subprocess.Popen(
+        [sys.executable, "data_collection.py"],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        stdout=open("capture_log.txt", "w"),
+        stderr=subprocess.STDOUT
+    )
+    process.wait()  # waits until capture finishes (window closes / 50 photos done)
+    known_face_encodings, known_face_names = load_known_faces()
+    print(f"Reloaded known faces after enrolling: {name}")
+
 @app.route('/api/enroll', methods=['POST'])
 def enroll_student():
     data = request.json
     name, reg, gender, age = data.get("name"), data.get("regNo"), data.get("gender"), data.get("age")
     df = pd.read_csv(STUDENTS_FILE)
     pd.concat([df, pd.DataFrame([{"Name": name, "RegNo": reg, "Gender": gender, "Age": age}])], ignore_index=True).to_csv(STUDENTS_FILE, index=False)
-    subprocess.Popen(
-        [sys.executable, "data_collection.py"],
-        cwd=os.path.dirname(os.path.abspath(__file__)),
-        stdout=open("capture_log.txt", "w"),
-        stderr=subprocess.STDOUT
-    )
+
+    thread = threading.Thread(target=run_capture_and_reload, args=(name,))
+    thread.start()
+
     return jsonify({"status": "Success", "message": "Launching tracking hardware camera environment..."})
 
 if __name__ == '__main__':
