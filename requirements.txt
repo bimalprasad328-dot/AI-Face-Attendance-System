@@ -1,0 +1,8 @@
+Flask
+flask-cors
+pandas
+numpy
+opencv-python
+face-recognition
+groq
+python-dotenv
