@@ -13,7 +13,7 @@ save_path = f"dataset/{name}"
 os.makedirs(save_path, exist_ok=True)
 
 # Open camera
-cam = cv2.VideoCapture(0)
+cam = cv2.VideoCapture(0, cv2.CAP_DSHOW)
 face_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
 count = 0

@@ -2,3 +2,7 @@
 .venv/
 .venv-1/
 __pycache__/
+dataset/
+students.csv
+attendance.csv
+capture_log.txt

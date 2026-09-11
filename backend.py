@@ -1,5 +1,6 @@
 # AI Face Attendance System Backend Processor
 import os
+import sys
 import cv2
 import subprocess
 import numpy as np
@@ -177,7 +178,12 @@ def enroll_student():
     name, reg, gender, age = data.get("name"), data.get("regNo"), data.get("gender"), data.get("age")
     df = pd.read_csv(STUDENTS_FILE)
     pd.concat([df, pd.DataFrame([{"Name": name, "RegNo": reg, "Gender": gender, "Age": age}])], ignore_index=True).to_csv(STUDENTS_FILE, index=False)
-    subprocess.Popen(["python", "data_collection.py"])
+    subprocess.Popen(
+        [sys.executable, "data_collection.py"],
+        cwd=os.path.dirname(os.path.abspath(__file__)),
+        stdout=open("capture_log.txt", "w"),
+        stderr=subprocess.STDOUT
+    )
     return jsonify({"status": "Success", "message": "Launching tracking hardware camera environment..."})
 
 if __name__ == '__main__':
