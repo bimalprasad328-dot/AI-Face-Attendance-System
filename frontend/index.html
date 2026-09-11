@@ -105,6 +105,19 @@
         tbody tr:hover { background: rgba(255,255,255,0.02); }
         .hidden { display: none; }
 
+        .download-bar { display: flex; align-items: center; gap: 10px; }
+        .date-input {
+            padding: 10px 12px; background: #090a0f; border: 1px solid var(--border); color: white;
+            border-radius: 6px; outline: none; font-family: 'Inter', sans-serif; font-size: 14px;
+        }
+        .date-input:focus { border-color: var(--accent); }
+        .btn-download {
+            background: var(--accent); color: white; padding: 10px 20px; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: 600; font-size: 14px; width: auto; white-space: nowrap;
+            transition: background 0.15s ease;
+        }
+        .btn-download:hover { background: var(--accent-hover); }
+
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
@@ -181,7 +194,15 @@
         </div>
 
         <div id="records" class="page">
-            <h2>Attendance Log Ledger</h2><div class="sub">Historical workspace storage records.</div>
+            <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:12px;">
+                <div>
+                    <h2>Attendance Log Ledger</h2><div class="sub">Historical workspace storage records.</div>
+                </div>
+                <div class="download-bar">
+                    <input type="date" id="download-date" class="date-input">
+                    <button onclick="downloadCsv()" class="btn-download">Download CSV</button>
+                </div>
+            </div>
             <div class="card">
                 <table id="records-table"><thead><tr><th>Timestamp</th><th>Name</th><th>Status</th></tr></thead><tbody id="records-table-body"></tbody></table>
             </div>
@@ -207,6 +228,11 @@
                 startCamera();
             } else {
                 stopCamera();
+            }
+
+            if (pageId === 'records') {
+                const dateInput = document.getElementById('download-date');
+                if (!dateInput.value) dateInput.value = new Date().toISOString().slice(0, 10);
             }
         }
 
@@ -317,6 +343,37 @@
             } finally {
                 btn.disabled = false;
                 btn.innerText = "Start Capture Process";
+            }
+        }
+
+        async function downloadCsv() {
+            const dateInput = document.getElementById('download-date');
+            const selectedDate = dateInput.value || new Date().toISOString().slice(0, 10);
+
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/attendance/all');
+                const allLogs = await res.json();
+
+                const dayLogs = allLogs.filter(log => String(log.Timestamp).startsWith(selectedDate));
+
+                if (!dayLogs.length) {
+                    alert(`No records found for ${selectedDate}.`);
+                    return;
+                }
+
+                const header = "Timestamp,Name,Status\n";
+                const rows = dayLogs.map(log => `"${log.Timestamp}","${log.Name}","${log.Status}"`).join("\n");
+                const csv = header + rows;
+
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `attendance_records_${selectedDate}.csv`;
+                a.click();
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                alert("Could not fetch attendance history from backend.");
             }
         }
 
