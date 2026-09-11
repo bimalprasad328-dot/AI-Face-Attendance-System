@@ -136,6 +136,12 @@ def get_stats():
         "ai_insight": ai_insight
     })
 
+@app.route('/api/attendance/all', methods=['GET'])
+def get_all_attendance():
+    """Returns the complete attendance history (all days), used for the Records page date-filtered CSV download."""
+    a_df = pd.read_csv(ATTENDANCE_FILE)
+    return jsonify(a_df.to_dict(orient="records"))
+
 @app.route('/api/recognize', methods=['POST'])
 def recognize_face():
     global known_face_encodings, known_face_names
