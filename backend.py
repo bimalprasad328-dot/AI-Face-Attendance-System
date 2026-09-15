@@ -1,40 +1,51 @@
-# AI Face Attendance System Backend Processor
+# AI Face Attendance System Backend Processor (SQLite + Auth edition)
 import os
 import sys
 import cv2
 import subprocess
 import threading
+import sqlite3
 import numpy as np
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
 from flask_cors import CORS
 import face_recognition
 from groq import Groq
 from datetime import datetime
 from dotenv import load_dotenv
 
+from auth import auth_bp, login_required, role_required, get_db, DB_PATH
+
 app = Flask(__name__)
 
-CORS(app)
+# IMPORTANT: replace with a real random secret in production
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-to-a-real-random-secret-key")
+
+# supports_credentials=True is required so the session cookie survives
+# cross-origin requests from the frontend (credentials: 'include')
+CORS(app, supports_credentials=True)
+
+app.register_blueprint(auth_bp)
+
 # Initialize Groq Client
 load_dotenv()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
     raise ValueError("GROQ_API_KEY not found. Create a .env file with GROQ_API_KEY=your_key")
 groq_client = Groq(api_key=GROQ_API_KEY)
-DATASET_DIR = "dataset"
-ATTENDANCE_FILE = "attendance.csv"
-STUDENTS_FILE = "students.csv"
 
-# Validate base storage file infrastructures
-for file_path, columns in [(ATTENDANCE_FILE, ["Timestamp", "Name", "Status"]), (STUDENTS_FILE, ["Name", "RegNo", "Gender", "Age"])]:
-    if not os.path.exists(file_path) or os.stat(file_path).st_size == 0:
-        
-        pd.DataFrame(columns=columns).to_csv(file_path, index=False)
+DATASET_DIR = "dataset"
+
+if not os.path.exists(DB_PATH):
+    raise RuntimeError(
+        f"{DB_PATH} not found. Run migrate_to_sqlite.py first to create the database."
+    )
+
 
 def load_known_faces():
     known_encodings, known_names = [], []
-    if not os.path.exists(DATASET_DIR): return known_encodings, known_names
+    if not os.path.exists(DATASET_DIR):
+        return known_encodings, known_names
     for student_name in os.listdir(DATASET_DIR):
         student_folder = os.path.join(DATASET_DIR, student_name)
         if os.path.isdir(student_folder):
@@ -45,58 +56,72 @@ def load_known_faces():
                     if encodings:
                         known_encodings.append(encodings[0])
                         known_names.append(student_name)
-                except Exception: continue
+                except Exception:
+                    continue
     return known_encodings, known_names
+
 
 known_face_encodings, known_face_names = load_known_faces()
 
+
 def synchronize_absentees():
-    """Scans student records against today's logs and automatically handles missing students."""
-    s_df = pd.read_csv(STUDENTS_FILE)
-    a_df = pd.read_csv(ATTENDANCE_FILE)
-    if s_df.empty: return
-    
+    """Scans ALL student records against today's logs and inserts Absent rows
+    for anyone missing. Runs globally regardless of who's logged in -
+    role-based filtering only happens when DATA IS READ, not when it's written."""
+    conn = get_db()
     today_str = datetime.now().strftime("%Y-%m-%d")
-    a_df['Timestamp_Clean'] = a_df['Timestamp'].astype(str)
-    today_logs = a_df[a_df['Timestamp_Clean'].str.startswith(today_str)]
-    present_today = today_logs[today_logs['Status'] == 'Present']['Name'].unique()
-    
-    updated_needed = False
-    for _, student in s_df.iterrows():
-        name = student['Name']
-        if name in present_today:
-            absent_row_mask = (a_df['Name'] == name) & (a_df['Timestamp_Clean'].str.startswith(today_str)) & (a_df['Status'] == 'Absent')
-            if absent_row_mask.any():
-                a_df = a_df[~absent_row_mask]
-                updated_needed = True
-        else:
-            absent_today_mask = (today_logs['Name'] == name) & (today_logs['Status'] == 'Absent')
-            if not absent_today_mask.any():
-                new_absent_entry = {"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Name": name, "Status": "Absent"}
-                a_df = pd.concat([a_df, pd.DataFrame([new_absent_entry])], ignore_index=True)
-                updated_needed = True
-                
-    if updated_needed:
-        if 'Timestamp_Clean' in a_df.columns: a_df = a_df.drop(columns=['Timestamp_Clean'])
-        a_df.to_csv(ATTENDANCE_FILE, index=False)
+
+    students = conn.execute("SELECT name, reg_no FROM students").fetchall()
+    if not students:
+        conn.close()
+        return
+
+    today_logs = conn.execute(
+        "SELECT reg_no, name, status FROM attendance WHERE timestamp LIKE ?",
+        (f"{today_str}%",)
+    ).fetchall()
+
+    present_names = {row["name"] for row in today_logs if row["status"] == "Present"}
+    already_absent_names = {row["name"] for row in today_logs if row["status"] == "Absent"}
+
+    for student in students:
+        name = student["name"]
+        reg_no = student["reg_no"]
+
+        if name in present_names:
+            # remove any stray Absent row for someone who is actually present
+            conn.execute(
+                """DELETE FROM attendance
+                   WHERE name = ? AND status = 'Absent' AND timestamp LIKE ?""",
+                (name, f"{today_str}%")
+            )
+        elif name not in already_absent_names:
+            conn.execute(
+                """INSERT INTO attendance (reg_no, name, timestamp, status)
+                   VALUES (?, ?, ?, ?)""",
+                (reg_no, name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Absent")
+            )
+
+    conn.commit()
+    conn.close()
+
 
 def generate_ai_insight(s_df, a_df):
-    """Feeds active operational CSV data tables straight to Groq for automated pipeline insights."""
+    """Feeds the active student/attendance tables straight to Groq for automated insights."""
     if s_df.empty:
         return "Waiting for enrollment data indexes to generate automated insights..."
-    
+
     today_str = datetime.now().strftime("%Y-%m-%d")
-    today_logs = a_df[a_df['Timestamp'].astype(str).str.startswith(today_str)]
-    
-    # Construct an analytic payload context prompt for the Llama architecture
+    today_logs = a_df[a_df["Timestamp"].astype(str).str.startswith(today_str)] if not a_df.empty else a_df
+
     prompt_context = f"""
     Analyze the following university classroom attendance context matrices:
     Master Student Registry:
     {s_df.to_string()}
-    
+
     Today's Recorded Log Statuses ({today_str}):
     {today_logs.to_string()}
-    
+
     Task: Write a single, brief sentence summarizing today's attendance metrics or trends (e.g., who is missing, overall attendance rate, or if everyone arrived safely). Keep it concise, natural, and under 25 words.
     """
     try:
@@ -113,22 +138,49 @@ def generate_ai_insight(s_df, a_df):
     except Exception:
         return "AI Insight Engine currently computing analytical trends..."
 
+
+def _scope_query(base_students_sql, base_attendance_sql):
+    """Returns (students_sql, students_params, attendance_sql, attendance_params)
+    scoped to the logged-in user's role. Admin sees everything, teacher sees
+    only their own students/records."""
+    if session["role"] == "admin":
+        return base_students_sql, (), base_attendance_sql, ()
+    else:
+        return (
+            base_students_sql + " WHERE teacher_id = ?", (session["user_id"],),
+            base_attendance_sql + """
+                WHERE reg_no IN (SELECT reg_no FROM students WHERE teacher_id = ?)
+            """, (session["user_id"],)
+        )
+
+
 @app.route('/api/stats', methods=['GET'])
+@login_required
 def get_stats():
     synchronize_absentees()
-    s_df = pd.read_csv(STUDENTS_FILE)
-    a_df = pd.read_csv(ATTENDANCE_FILE)
+    conn = get_db()
+
+    s_sql, s_params, a_sql, a_params = _scope_query(
+        "SELECT * FROM students", "SELECT * FROM attendance"
+    )
+    s_df = pd.read_sql_query(s_sql, conn, params=s_params)
+    a_df = pd.read_sql_query(a_sql, conn, params=a_params)
+    conn.close()
+
+    # Rename to match the existing frontend's expected field names
+    s_df = s_df.rename(columns={"name": "Name", "reg_no": "RegNo", "gender": "Gender", "age": "Age"})
+    a_df = a_df.rename(columns={"name": "Name", "timestamp": "Timestamp", "status": "Status"})
+
     today_str = datetime.now().strftime("%Y-%m-%d")
-    
-    today_logs = a_df[a_df['Timestamp'].astype(str).str.startswith(today_str)]
-    present_count = today_logs[today_logs['Status'] == 'Present']['Name'].nunique()
-    absent_count = today_logs[today_logs['Status'] == 'Absent']['Name'].nunique()
-    
-    # Run the automated Groq prompt calculation asynchronously
+    today_logs = a_df[a_df["Timestamp"].astype(str).str.startswith(today_str)] if not a_df.empty else a_df
+
+    present_count = today_logs[today_logs["Status"] == "Present"]["Name"].nunique() if not today_logs.empty else 0
+    absent_count = today_logs[today_logs["Status"] == "Absent"]["Name"].nunique() if not today_logs.empty else 0
+
     ai_insight = generate_ai_insight(s_df, a_df)
-    
+
     return jsonify({
-        "total_enrolled": int(s_df['Name'].nunique()),
+        "total_enrolled": int(s_df["Name"].nunique()) if not s_df.empty else 0,
         "present_today": int(present_count),
         "absent_today": int(absent_count),
         "today_logs": today_logs.to_dict(orient="records"),
@@ -136,48 +188,73 @@ def get_stats():
         "ai_insight": ai_insight
     })
 
+
 @app.route('/api/attendance/all', methods=['GET'])
+@role_required("admin")
 def get_all_attendance():
-    """Returns the complete attendance history (all days), used for the Records page date-filtered CSV download."""
-    a_df = pd.read_csv(ATTENDANCE_FILE)
+    """Admin-only full history dump. Most downloads should go through
+    /api/attendance/download (in auth.py) instead, which is role-filtered."""
+    conn = get_db()
+    a_df = pd.read_sql_query("SELECT * FROM attendance", conn)
+    conn.close()
+    a_df = a_df.rename(columns={"name": "Name", "timestamp": "Timestamp", "status": "Status"})
     return jsonify(a_df.to_dict(orient="records"))
 
+
 @app.route('/api/recognize', methods=['POST'])
+@login_required
 def recognize_face():
     global known_face_encodings, known_face_names
-    if 'image' not in request.files: return jsonify({"error": "No image found"}), 400
-    
+    if 'image' not in request.files:
+        return jsonify({"error": "No image found"}), 400
+
     npimg = np.frombuffer(request.files['image'].read(), np.uint8)
     frame = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
     rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    
+
     face_locations = face_recognition.face_locations(rgb_frame)
     face_encodings = face_recognition.face_encodings(rgb_frame, face_locations)
-    
-    a_df = pd.read_csv(ATTENDANCE_FILE)
+
+    conn = get_db()
     today_str = datetime.now().strftime("%Y-%m-%d")
-    file_changed = False
-    
+
     for face_encoding in face_encodings:
-        if not known_face_encodings: break
+        if not known_face_encodings:
+            break
         matches = face_recognition.compare_faces(known_face_encodings, face_encoding, tolerance=0.45)
-        name = "Unknown"
-        
         face_distances = face_recognition.face_distance(known_face_encodings, face_encoding)
+
         if len(face_distances) > 0 and matches[np.argmin(face_distances)]:
             name = known_face_names[np.argmin(face_distances)]
-            
-            already_present = a_df[(a_df['Name'] == name) & (a_df['Timestamp'].astype(str).str.startswith(today_str)) & (a_df['Status'] == 'Present')]
-            if already_present.empty:
-                a_df = a_df[~((a_df['Name'] == name) & (a_df['Timestamp'].astype(str).str.startswith(today_str)) & (a_df['Status'] == 'Absent'))]
-                new_entry = {"Timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Name": name, "Status": "Present"}
-                a_df = pd.concat([a_df, pd.DataFrame([new_entry])], ignore_index=True)
-                file_changed = True
-                
-    if file_changed:
-        a_df.to_csv(ATTENDANCE_FILE, index=False)
+
+            already_present = conn.execute(
+                """SELECT 1 FROM attendance
+                   WHERE name = ? AND status = 'Present' AND timestamp LIKE ?""",
+                (name, f"{today_str}%")
+            ).fetchone()
+
+            if not already_present:
+                conn.execute(
+                    """DELETE FROM attendance
+                       WHERE name = ? AND status = 'Absent' AND timestamp LIKE ?""",
+                    (name, f"{today_str}%")
+                )
+                student_row = conn.execute(
+                    "SELECT reg_no FROM students WHERE name = ? LIMIT 1", (name,)
+                ).fetchone()
+                reg_no = student_row["reg_no"] if student_row else None
+
+                conn.execute(
+                    """INSERT INTO attendance (reg_no, name, timestamp, status)
+                       VALUES (?, ?, ?, ?)""",
+                    (reg_no, name, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Present")
+                )
+                conn.commit()
+
+    conn.close()
     synchronize_absentees()
     return jsonify({"status": "processed"})
+
 
 def run_capture_and_reload(name):
     global known_face_encodings, known_face_names
@@ -191,17 +268,41 @@ def run_capture_and_reload(name):
     known_face_encodings, known_face_names = load_known_faces()
     print(f"Reloaded known faces after enrolling: {name}")
 
+
 @app.route('/api/enroll', methods=['POST'])
+@role_required("admin", "teacher")
 def enroll_student():
     data = request.json
-    name, reg, gender, age = data.get("name"), data.get("regNo"), data.get("gender"), data.get("age")
-    df = pd.read_csv(STUDENTS_FILE)
-    pd.concat([df, pd.DataFrame([{"Name": name, "RegNo": reg, "Gender": gender, "Age": age}])], ignore_index=True).to_csv(STUDENTS_FILE, index=False)
+    name = data.get("name")
+    reg_no = data.get("regNo")
+    gender = data.get("gender")
+    age = data.get("age")
+    class_name = data.get("classSection")
+
+    # Teachers enrolling a student are automatically assigned as that
+    # student's teacher. Admins can enroll without an owning teacher
+    # (assign one later) unless you add a teacher-picker to the admin UI.
+    teacher_id = session["user_id"] if session["role"] == "teacher" else None
+
+    conn = get_db()
+    existing = conn.execute("SELECT 1 FROM students WHERE reg_no = ?", (reg_no,)).fetchone()
+    if existing:
+        conn.close()
+        return jsonify({"status": "Error", "message": f"RegNo {reg_no} already exists."}), 400
+
+    conn.execute(
+        """INSERT INTO students (name, reg_no, gender, age, class_name, teacher_id)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (name, reg_no, gender, age, class_name, teacher_id)
+    )
+    conn.commit()
+    conn.close()
 
     thread = threading.Thread(target=run_capture_and_reload, args=(name,))
     thread.start()
 
     return jsonify({"status": "Success", "message": "Launching tracking hardware camera environment..."})
+
 
 if __name__ == '__main__':
     app.run(host='127.0.0.1', port=5000, debug=False)

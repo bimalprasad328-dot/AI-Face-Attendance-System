@@ -6,3 +6,4 @@ dataset/
 students.csv
 attendance.csv
 capture_log.txt
+faceattend.db

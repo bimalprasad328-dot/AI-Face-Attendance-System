@@ -1,0 +1,93 @@
+<!-- login.html -->
+<!DOCTYPE html>
+<html lang="en"><head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FaceAttend AI - Login</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap');
+        :root {
+            --bg: #0d0f14; --surface: #13161e; --card: #1a1c28; --border: #252a38;
+            --accent: #4f46e5; --accent-hover: #6366f1; --red: #ef4444; --text: #e8eaf0; --muted: #6b7280;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg); color: var(--text); font-family: 'Inter', sans-serif;
+            display: flex; align-items: center; justify-content: center; min-height: 100vh;
+        }
+        .login-card {
+            background: var(--card); border: 1px solid var(--border); border-radius: 12px;
+            padding: 40px; width: 100%; max-width: 380px; box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+        .logo { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+        .logo-dot { width: 10px; height: 10px; border-radius: 50%; background: #22c55e; box-shadow: 0 0 8px #22c55e; }
+        .logo span { color: #a78bfa; }
+        .sub { color: var(--muted); font-size: 13.5px; margin-bottom: 28px; }
+        label { font-size: 13px; color: var(--muted); font-weight: 500; display: block; margin-bottom: 6px; }
+        input.form-input {
+            width: 100%; padding: 12px; background: #090a0f; border: 1px solid var(--border); color: white;
+            border-radius: 6px; margin-bottom: 16px; outline: none; font-family: 'Inter', sans-serif; font-size: 14px;
+        }
+        input.form-input:focus { border-color: var(--accent); }
+        .btn-submit {
+            background: var(--accent); color: white; padding: 12px 24px; border: none; border-radius: 6px;
+            cursor: pointer; font-weight: 600; font-size: 14px; width: 100%; transition: background 0.15s ease;
+        }
+        .btn-submit:hover { background: var(--accent-hover); }
+        .btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+        .error-msg { color: var(--red); font-size: 13px; margin-top: -6px; margin-bottom: 14px; display: none; }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="logo"><span class="logo-dot"></span>FaceAttend <span>AI System</span></div>
+        <div class="sub">Sign in to access the attendance dashboard</div>
+        <form id="loginForm" onsubmit="submitLogin(event)">
+            <label>Username</label>
+            <input type="text" id="username" class="form-input" required autocomplete="username">
+            <label>Password</label>
+            <input type="password" id="password" class="form-input" required autocomplete="current-password">
+            <div class="error-msg" id="error-msg"></div>
+            <button type="submit" class="btn-submit" id="login-btn">Sign In</button>
+        </form>
+    </div>
+
+    <script>
+        async function submitLogin(e) {
+            e.preventDefault();
+            const btn = document.getElementById('login-btn');
+            const errorEl = document.getElementById('error-msg');
+            errorEl.style.display = 'none';
+            btn.disabled = true;
+            btn.innerText = "Signing in...";
+
+            try {
+                const res = await fetch('http://127.0.0.1:5000/api/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        username: document.getElementById('username').value,
+                        password: document.getElementById('password').value
+                    })
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    errorEl.innerText = data.error || "Login failed";
+                    errorEl.style.display = 'block';
+                    return;
+                }
+
+                window.location.href = 'index.html'; // adjust to your dashboard filename
+            } catch (err) {
+                errorEl.innerText = "Could not reach the server.";
+                errorEl.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Sign In";
+            }
+        }
+    </script>
+</body>
+</html>

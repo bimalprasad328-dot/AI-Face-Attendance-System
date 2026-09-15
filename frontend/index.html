@@ -31,9 +31,17 @@
         }
         nav button:hover { background: rgba(255,255,255,0.04); color: var(--text); }
         nav button.active { color: var(--text); background: var(--card); border-bottom: 2px solid var(--accent); }
+        .header-right { display: flex; align-items: center; gap: 16px; }
         .engine-badge { font-size: 13px; color: var(--green); font-weight: 600; display: flex; align-items: center; gap: 6px; }
         .engine-badge .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+        .user-badge { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+        .btn-logout {
+            background: transparent; border: 1px solid var(--border); color: var(--muted);
+            padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px;
+            transition: border-color 0.15s ease, color 0.15s ease;
+        }
+        .btn-logout:hover { border-color: var(--red); color: var(--red); }
 
         .main-container { flex: 1; padding: 40px; }
         .page { display: none; }
@@ -133,7 +141,12 @@
             <button onclick="switchPage('enroll', this)">Enroll Student</button>
             <button onclick="switchPage('records', this)">Records</button>
         </nav>
-        <div class="engine-badge"><span class="pulse"></span>Groq Core Synchronized</div>
+        <div class="header-right">
+            <div class="user-badge" id="user-badge"></div>
+            <button class="btn-logout" onclick="openSettings()">Account</button>
+            <button class="btn-logout" onclick="logout()">Logout</button>
+            <div class="engine-badge"><span class="pulse"></span>Groq Core Synchronized</div>
+        </div>
     </header>
 
     <div class="main-container">
@@ -188,6 +201,7 @@
                     <label>Gender</label>
                     <select id="form-gender" class="form-input"><option value="Male">Male</option><option value="Female">Female</option></select>
                     <label>Age</label><input type="number" id="form-age" class="form-input" required placeholder="20">
+                    <label>Class / Section</label><input type="text" id="form-class" class="form-input" required placeholder="e.g. CSE-3A">
                     <button type="submit" class="btn-submit" id="enroll-btn">Start Capture Process</button>
                 </form>
             </div>
@@ -209,13 +223,105 @@
         </div>
     </div>
 
+    <!-- Account Settings Modal -->
+    <div id="settings-modal" class="hidden" style="position:fixed; inset:0; background:rgba(0,0,0,0.6); z-index:100; align-items:center; justify-content:center;">
+        <div class="card" style="max-width:400px; width:90%;">
+            <div class="card-heading">Account Settings</div>
+            <form id="settingsForm" onsubmit="submitCredentialChange(event)">
+                <label>Current Password</label>
+                <input type="password" id="settings-current-password" class="form-input" required>
+                <label>New Username (optional)</label>
+                <input type="text" id="settings-new-username" class="form-input" placeholder="Leave blank to keep current">
+                <label>New Password (optional)</label>
+                <input type="password" id="settings-new-password" class="form-input" placeholder="Leave blank to keep current">
+                <div class="error-msg" id="settings-error" style="color:var(--red); font-size:13px; margin-bottom:14px; display:none;"></div>
+                <div style="display:flex; gap:10px;">
+                    <button type="button" class="btn-logout" style="width:100%;" onclick="closeSettings()">Cancel</button>
+                    <button type="submit" class="btn-submit" id="settings-save-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
+        const API_BASE = 'http://127.0.0.1:5000';
+
+        function openSettings() {
+            document.getElementById('settings-modal').style.display = 'flex';
+            document.getElementById('settings-modal').classList.remove('hidden');
+        }
+        function closeSettings() {
+            document.getElementById('settings-modal').style.display = 'none';
+            document.getElementById('settingsForm').reset();
+            document.getElementById('settings-error').style.display = 'none';
+        }
+
+        async function submitCredentialChange(e) {
+            e.preventDefault();
+            const btn = document.getElementById('settings-save-btn');
+            const errorEl = document.getElementById('settings-error');
+            errorEl.style.display = 'none';
+            btn.disabled = true;
+            btn.innerText = "Saving...";
+
+            try {
+                const res = await fetch(`${API_BASE}/api/change-credentials`, {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        currentPassword: document.getElementById('settings-current-password').value,
+                        newUsername: document.getElementById('settings-new-username').value,
+                        newPassword: document.getElementById('settings-new-password').value
+                    })
+                });
+                const data = await res.json();
+
+                if (!res.ok) {
+                    errorEl.innerText = data.error || "Could not update credentials";
+                    errorEl.style.display = 'block';
+                    return;
+                }
+
+                alert("Account updated. Please log in again with your new credentials.");
+                await logout();
+            } catch (err) {
+                errorEl.innerText = "Could not reach the server.";
+                errorEl.style.display = 'block';
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "Save";
+            }
+        }
+
         const video = document.getElementById('video');
         const canvas = document.getElementById('canvas');
         const context = canvas.getContext('2d');
         const statusBanner = document.getElementById('status-banner');
         let cameraStream = null;
         let recognizeInterval = null;
+
+        // ---------- Session guard ----------
+        // Runs on page load. Bounces to login.html if nobody's signed in,
+        // otherwise shows who's logged in in the header.
+        async function checkSession() {
+            try {
+                const res = await fetch(`${API_BASE}/api/session`, { credentials: 'include' });
+                const data = await res.json();
+                if (!data.logged_in) {
+                    window.location.href = 'login.html';
+                    return;
+                }
+                document.getElementById('user-badge').innerText = `${data.username} (${data.role})`;
+            } catch (err) {
+                window.location.href = 'login.html';
+            }
+        }
+
+        async function logout() {
+            await fetch(`${API_BASE}/api/logout`, { method: 'POST', credentials: 'include' });
+            window.location.href = 'login.html';
+        }
 
         function switchPage(pageId, btn) {
             document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -262,7 +368,13 @@
 
         async function fetchDashboardStats() {
             try {
-                const res = await fetch('http://127.0.0.1:5000/api/stats');
+                const res = await fetch(`${API_BASE}/api/stats`, { credentials: 'include' });
+
+                if (res.status === 401) {
+                    window.location.href = 'login.html';
+                    return;
+                }
+
                 const data = await res.json();
 
                 document.getElementById('stat-enrolled').innerText = data.total_enrolled;
@@ -308,7 +420,11 @@
                 const formData = new FormData();
                 formData.append('image', blob, 'autoscan.jpg');
                 try {
-                    await fetch('http://127.0.0.1:5000/api/recognize', { method: 'POST', body: formData });
+                    await fetch(`${API_BASE}/api/recognize`, {
+                        method: 'POST',
+                        credentials: 'include',
+                        body: formData
+                    });
                     fetchDashboardStats();
                     statusBanner.innerHTML = "Scanning actively...";
                 } catch (err) {
@@ -326,11 +442,13 @@
                 name: document.getElementById('form-name').value,
                 regNo: document.getElementById('form-reg').value,
                 gender: document.getElementById('form-gender').value,
-                age: document.getElementById('form-age').value
+                age: document.getElementById('form-age').value,
+                classSection: document.getElementById('form-class').value
             };
             try {
-                const res = await fetch('http://127.0.0.1:5000/api/enroll', {
+                const res = await fetch(`${API_BASE}/api/enroll`, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
                 });
@@ -346,37 +464,15 @@
             }
         }
 
+        // Now hits the role-filtered server-side download route directly -
+        // admins get everyone's records, teachers only get their own class's.
         async function downloadCsv() {
             const dateInput = document.getElementById('download-date');
             const selectedDate = dateInput.value || new Date().toISOString().slice(0, 10);
-
-            try {
-                const res = await fetch('http://127.0.0.1:5000/api/attendance/all');
-                const allLogs = await res.json();
-
-                const dayLogs = allLogs.filter(log => String(log.Timestamp).startsWith(selectedDate));
-
-                if (!dayLogs.length) {
-                    alert(`No records found for ${selectedDate}.`);
-                    return;
-                }
-
-                const header = "Timestamp,Name,Status\n";
-                const rows = dayLogs.map(log => `"${log.Timestamp}","${log.Name}","${log.Status}"`).join("\n");
-                const csv = header + rows;
-
-                const blob = new Blob([csv], { type: 'text/csv' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `attendance_records_${selectedDate}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-            } catch (err) {
-                alert("Could not fetch attendance history from backend.");
-            }
+            window.location.href = `${API_BASE}/api/attendance/download?date=${selectedDate}`;
         }
 
+        checkSession();
         fetchDashboardStats();
         setInterval(fetchDashboardStats, 7000);
     </script>

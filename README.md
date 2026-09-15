@@ -1,75 +1,92 @@
-# AI Face Attendance System 🚀
+# FaceAttend AI
 
-An automated attendance tracking system powered by Artificial Intelligence and computer vision. This project uses facial recognition to identify individuals and log their attendance in real-time, eliminating manual paperwork and buddy punching.
+An AI-powered face recognition attendance system with a live camera recognition engine, role-based access control, and AI-generated attendance insights.
 
----
+## Features
 
-## 🛠️ Tech Stack & Structure
+- **Live face recognition attendance** — webcam feed scans and marks attendance automatically every 1.5 seconds
+- **Student enrollment** — capture a new student's face via webcam and store their profile
+- **Role-based access** — Admin and Teacher accounts, with teachers only seeing their own class's students and attendance records
+- **AI-generated insights** — a daily attendance summary generated using Groq's LLM API
+- **Date-filtered attendance export** — download attendance records as CSV for any specific date, scoped to what the logged-in user is allowed to see
+- **Account settings** — change your username/password directly from the dashboard, no scripts required
+- **SQLite-backed** — structured relational storage for users, students, and attendance records
 
-### Project Components:
-* **Frontend**: HTML5, CSS3, and JavaScript (with a responsive, modern UI)
-* **Backend**: Python (Flask / FastAPI for processing data endpoints)
-* **Storage**: CSV files (`students.csv`, `attendance.csv`) for student directories and daily attendance logging
-* **AI & Computer Vision**: Python OpenCV / Face Recognition libraries
+## Tech Stack
 
-### File Directory Layout:
-* `backend.py` — Handles API routes and facial recognition data flows.
-* `data_collection.py` — Script to gather and register initial student face images.
-* `frontend/index.html` — Clean, user-friendly dashboard interface.
-* `students.csv` — Contains database details of registered students. (generated locally, not tracked in git)
-* `attendance.csv` — Live log recording dates, times, and present names. (generated locally, not tracked in git)
+- **Backend:** Python, Flask, Flask-CORS
+- **Database:** SQLite
+- **Face Recognition:** `face_recognition` (dlib), OpenCV
+- **AI Insights:** Groq API (Llama 3)
+- **Frontend:** Vanilla HTML/CSS/JS (no framework)
 
----
+## Project Structure
 
-## 🚀 Key Features
+```
+face-detection-clean/
+├── backend.py              # Main Flask app — stats, enroll, recognize routes
+├── auth.py                 # Login/session/role logic + credentials + role-filtered CSV download
+├── migrate_to_sqlite.py    # One-time script to create the database
+├── data_collection.py      # Webcam capture script used during enrollment
+├── requirements.txt
+├── .env                    # GROQ_API_KEY (not committed)
+├── faceattend.db           # SQLite database (not committed)
+├── dataset/                # Captured face images, one folder per student (not committed)
+└── frontend/
+    ├── login.html          # Sign-in page
+    └── index.html          # Main dashboard (Overview, Take Attendance, Enroll, Records)
+```
 
-* **Real-Time Detection**: Instantly registers faces through camera streaming.
-* **Modern UI Dashboard**: Styled with custom CSS variables, custom typography, and responsive grid layouts.
-* **Automatic CSV Updates**: Records attendance logs with precise time stamping instantly.
-* **Secure Environment Configuration**: Protects system variables using hidden `.env` files.
+## Setup
 
----
+### 1. Install dependencies
 
-## 📥 Setup & Installation
-
-Follow these steps to run the project locally on your machine:
-
-### 1. Clone the repository
 ```bash
-git clone https://github.com/bimalprasad328-dot/AI-Face-Attendance-System.git
-cd AI-Face-Attendance-System
+pip install -r requirements.txt
 ```
 
-### 2. Set up a Virtual Environment (Recommended)
+### 2. Add your Groq API key
+
+Create a `.env` file in the project root:
+
+```
+GROQ_API_KEY=your_key_here
+FLASK_SECRET_KEY=some_random_secret_string
+```
+
+### 3. Create the database
+
 ```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
-
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
+python migrate_to_sqlite.py
 ```
 
-### 3. Set up environment variables
-Create a `.env` file in the project root with the following:
-You can get a free API key from https://console.groq.com
-```
-### 4. Register Student Faces
-Run the data collection script to snap face samples and update your directory:
-```bash
-python data_collection.py
-```
+This creates `faceattend.db` and a default admin account:
 
-### 5. Start the Application Server
-Launch the backend processor:
+- **Username:** `admin`
+- **Password:** `changeme123`
+
+Change this immediately after your first login via the in-app **Account** settings.
+
+### 4. Run the backend
+
 ```bash
 python backend.py
 ```
-Open `frontend/index.html` directly in your browser or run it via a Live Server extension to begin tracking live attendance!
 
----
+The API runs on `http://127.0.0.1:5000`.
 
-## 📝 License
+### 5. Open the frontend
 
-Distributed under the MIT License. See `LICENSE` for more information.
+Serve the `frontend/` folder with a local server (e.g. VS Code's Live Server extension) and open `login.html` first. After signing in, you'll be redirected to the dashboard.
+
+## Roles
+
+| Role    | Access                                                         |
+|---------|------------------------------------------------------------------|
+| Admin   | Full access — all students, all attendance records, all classes |
+| Teacher | Only their own enrolled students and those students' attendance |
+
+## Notes
+
+- `dataset/`, `faceattend.db`, and `.env` are intentionally excluded from version control — see `.gitignore`.
+- New teacher accounts and reassigning existing students to a teacher/class currently require direct database access; an in-app admin tool for this is planned.
