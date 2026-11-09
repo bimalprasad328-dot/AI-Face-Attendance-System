@@ -1,9 +1,8 @@
 .env
-.venv/
-.venv-1/
-__pycache__/
-dataset/
-students.csv
-attendance.csv
-capture_log.txt
 faceattend.db
+dataset/
+__pycache__/
+capture_log.txt
+attendance.csv
+students.csv
+reset_password.py

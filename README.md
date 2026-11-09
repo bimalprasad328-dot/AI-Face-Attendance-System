@@ -1,92 +1,108 @@
 # FaceAttend AI
 
-An AI-powered face recognition attendance system with a live camera recognition engine, role-based access control, and AI-generated attendance insights.
+An AI-based attendance management system that uses face recognition to mark attendance automatically. Built with a Flask backend and an HTML/JavaScript dashboard.
 
 ## Features
 
-- **Live face recognition attendance** — webcam feed scans and marks attendance automatically every 1.5 seconds
-- **Student enrollment** — capture a new student's face via webcam and store their profile
-- **Role-based access** — Admin and Teacher accounts, with teachers only seeing their own class's students and attendance records
-- **AI-generated insights** — a daily attendance summary generated using Groq's LLM API
-- **Date-filtered attendance export** — download attendance records as CSV for any specific date, scoped to what the logged-in user is allowed to see
-- **Account settings** — change your username/password directly from the dashboard, no scripts required
-- **SQLite-backed** — structured relational storage for users, students, and attendance records
+- **Face enrollment**: register students with their name, registration number, gender, age and class/section
+- **Auto attendance**: live camera face recognition that logs attendance with a timestamp
+- **Dashboard**: overview of attendance activity
+- **Records**: browse attendance history and download it as CSV for a chosen date
+- **Login system with roles**: Admin and Teacher accounts (teachers only see their own students' records)
+- **Account settings**: change your username and password from inside the app
+- **AI assistant**: built-in assistant powered by Groq / Llama 3, with support for other providers (Anthropic, OpenAI, Gemini, Mistral, custom endpoints)
 
 ## Tech Stack
 
-- **Backend:** Python, Flask, Flask-CORS
-- **Database:** SQLite
-- **Face Recognition:** `face_recognition` (dlib), OpenCV
-- **AI Insights:** Groq API (Llama 3)
-- **Frontend:** Vanilla HTML/CSS/JS (no framework)
+- **Backend:** Python, Flask, SQLite
+- **Face recognition:** OpenCV, dlib / face_recognition
+- **Frontend:** HTML, CSS, JavaScript
+- **Config:** python-dotenv for API keys
 
 ## Project Structure
 
 ```
 face-detection-clean/
-├── backend.py              # Main Flask app — stats, enroll, recognize routes
-├── auth.py                 # Login/session/role logic + credentials + role-filtered CSV download
-├── migrate_to_sqlite.py    # One-time script to create the database
-├── data_collection.py      # Webcam capture script used during enrollment
+├── backend.py             # Flask app and API routes
+├── auth.py                # Login, roles, change-credentials, CSV download
+├── data_collection.py     # Face capture script used during enrollment
+├── migrate_to_sqlite.py   # Migrates old CSV data into SQLite
+├── frontend/
+│   ├── index.html         # Dashboard
+│   └── login.html         # Login page
 ├── requirements.txt
-├── .env                    # GROQ_API_KEY (not committed)
-├── faceattend.db           # SQLite database (not committed)
-├── dataset/                # Captured face images, one folder per student (not committed)
-└── frontend/
-    ├── login.html          # Sign-in page
-    └── index.html          # Main dashboard (Overview, Take Attendance, Enroll, Records)
+└── .env                   # Your API keys (not committed)
 ```
 
-## Setup
+## Getting Started
 
-### 1. Install dependencies
+### 1. Clone the repository
 
 ```bash
+git clone https://github.com/bimalprasad328-dot/<your-repo-name>.git
+cd <your-repo-name>
+```
+
+### 2. Create an environment and install dependencies
+
+```bash
+conda create -n faceattend python=3.11
+conda activate faceattend
 pip install -r requirements.txt
 ```
 
-### 2. Add your Groq API key
+> On Windows, dlib can be hard to build with pip. Installing it through conda is easier.
+
+### 3. Add your API keys
 
 Create a `.env` file in the project root:
 
 ```
 GROQ_API_KEY=your_key_here
-FLASK_SECRET_KEY=some_random_secret_string
 ```
 
-### 3. Create the database
+Add keys for any other AI provider you want to use.
+
+### 4. Set up the database
+
+If you have old CSV data, run the migration once:
 
 ```bash
 python migrate_to_sqlite.py
 ```
 
-This creates `faceattend.db` and a default admin account:
-
-- **Username:** `admin`
-- **Password:** `changeme123`
-
-Change this immediately after your first login via the in-app **Account** settings.
-
-### 4. Run the backend
+### 5. Run the app
 
 ```bash
 python backend.py
 ```
 
-The API runs on `http://127.0.0.1:5000`.
+The server starts at `http://127.0.0.1:5000`. Open the login page, sign in with your admin account, and you can change your credentials from **Account Settings**.
 
-### 5. Open the frontend
+## Usage
 
-Serve the `frontend/` folder with a local server (e.g. VS Code's Live Server extension) and open `login.html` first. After signing in, you'll be redirected to the dashboard.
+1. **Enroll a student** from the Enroll Student page. The camera captures face samples.
+2. **Take attendance** from the Auto Attendance page. Recognised students are logged automatically.
+3. **View or download records** from the Records page. Pick a date and download the CSV.
 
-## Roles
+## Security Notes
 
-| Role    | Access                                                         |
-|---------|------------------------------------------------------------------|
-| Admin   | Full access — all students, all attendance records, all classes |
-| Teacher | Only their own enrolled students and those students' attendance |
+- Passwords are stored as hashes, never in plain text.
+- Keep your `.env` file, database and face dataset out of version control.
+- Set a strong, random `app.secret_key` in `backend.py` before deploying.
 
-## Notes
+## Roadmap
 
-- `dataset/`, `faceattend.db`, and `.env` are intentionally excluded from version control — see `.gitignore`.
-- New teacher accounts and reassigning existing students to a teacher/class currently require direct database access; an in-app admin tool for this is planned.
+- Attendance analytics and reports
+- Email / SMS notifications
+- Docker setup and a setup wizard
+- Demo video
+
+## Author
+
+**Bimal**, B.Tech CSE, Aryan Institute of Engineering and Technology, Bhubaneswar
+GitHub: [bimalprasad328-dot](https://github.com/bimalprasad328-dot)
+
+## License
+
+Add a license of your choice (for example MIT) before sharing publicly.
