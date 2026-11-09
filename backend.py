@@ -16,10 +16,15 @@ from dotenv import load_dotenv
 
 from auth import auth_bp, login_required, role_required, get_db, DB_PATH
 
+# Load .env FIRST so every os.environ lookup below can see it
+load_dotenv()
+
 app = Flask(__name__)
 
-# IMPORTANT: replace with a real random secret in production
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", "change-this-to-a-real-random-secret-key")
+# Secret key comes from .env (SECRET_KEY=...). No hardcoded fallback.
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key:
+    raise ValueError("SECRET_KEY not found. Add SECRET_KEY=your_key to your .env file")
 
 # supports_credentials=True is required so the session cookie survives
 # cross-origin requests from the frontend (credentials: 'include')
@@ -28,10 +33,9 @@ CORS(app, supports_credentials=True)
 app.register_blueprint(auth_bp)
 
 # Initialize Groq Client
-load_dotenv()
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 if not GROQ_API_KEY:
-    raise ValueError("GROQ_API_KEY not found. Create a .env file with GROQ_API_KEY=your_key")
+    raise ValueError("GROQ_API_KEY not found. Add GROQ_API_KEY=your_key to your .env file")
 groq_client = Groq(api_key=GROQ_API_KEY)
 
 DATASET_DIR = "dataset"
